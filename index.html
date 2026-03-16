@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Predictor Live</title>
+    <style>
+        :root { --primary: #00ff85; --bg: #0a0a0a; --card: #161616; --accent: #888; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: white; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: var(--card); padding: 20px; border-radius: 20px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 1px solid #333; }
+        .api-status { font-size: 0.65rem; color: var(--primary); text-align: center; margin-bottom: 15px; border: 1px solid var(--primary); padding: 8px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        label { font-size: 0.7rem; color: var(--accent); text-transform: uppercase; }
+        select, button { width: 100%; padding: 12px; margin: 8px 0 15px 0; border-radius: 12px; border: none; font-size: 1rem; }
+        select { background: #222; color: white; border: 1px solid #444; }
+        button { background: var(--primary); color: #000; font-weight: bold; cursor: pointer; }
+        .result-box { margin-top: 10px; padding: 15px; background: #202020; border-radius: 12px; display: none; }
+        .prob-bar { height: 8px; background: #333; border-radius: 10px; margin: 5px 0 15px 0; overflow: hidden; }
+        .fill { height: 100%; width: 0%; transition: width 0.8s ease-in-out; }
+        .history-item { background: #1a1a1a; padding: 12px; border-radius: 12px; margin-bottom: 8px; border-left: 4px solid var(--primary); font-size: 0.8rem; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="api-status" onclick="syncWithAPI()">🔄 ESTADO: DATOS LOCALES (Clic para Sincronizar)</div>
+    
+    <h1>⚽ IA PREDICTOR LIVE</h1>
+    
+    <label>Competición</label>
+    <select id="league" onchange="updateTeams()">
+        <option value="laliga">🇪🇸 La Liga (ID 564)</option>
+        <option value="premier">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier League (ID 8)</option>
+    </select>
+
+    <div style="display: flex; gap: 10px;">
+        <div style="flex: 1;">
+            <label>Local</label>
+            <select id="local"></select>
+        </div>
+        <div style="flex: 1;">
+            <label>Visitante</label>
+            <select id="visitante"></select>
+        </div>
+    </div>
+
+    <button onclick="calculate()">GENERAR PREDICCIÓN</button>
+
+    <div id="resultado" class="result-box">
+        <div id="resTitle" style="font-weight: bold; margin-bottom: 10px; text-align: center;"></div>
+        <div class="prob-bar"><div id="bL" class="fill" style="background: var(--primary);"></div></div>
+        <div class="prob-bar"><div id="bV" class="fill" style="background: #0088ff;"></div></div>
+    </div>
+</div>
+
+<div id="historyList" style="width: 100%; max-width: 400px; margin-top: 20px;"></div>
+
+<script>
+    // TU TOKEN CONFIGURADO
+    const MY_TOKEN = "ClHIW3jOIM0Cllgk6R3XDiVMx8YOezh8vUgWjo4eTIrUSfhgE6ABxf6uKnFt";
+
+    let teamData = {
+        laliga: [{n:"Cargando...", p:50}],
+        premier: [{n:"Cargando...", p:50}]
+    };
+
+    async function syncWithAPI() {
+        const statusEl = document.querySelector('.api-status');
+        const leagueKey = document.getElementById('league').value;
+        const leagueId = leagueKey === 'laliga' ? 564 : 8;
+        
+        statusEl.innerText = "⏳ CONECTANDO A SPORTMONKS...";
+
+        try {
+            const resp = await fetch(`https://api.sportmonks.com/v3/football/standings/leagues/${leagueId}?api_token=${MY_TOKEN}&include=participant`);
+            const json = await resp.json();
+
+            if (json.data && json.data[0].standings) {
+                teamData[leagueKey] = json.data[0].standings.map(s => ({
+                    n: s.participant.name,
+                    p: 100 - s.position 
+                }));
+                updateTeams();
+                statusEl.innerText = "✅ DATOS REALES ACTUALIZADOS";
+                statusEl.style.color = "#00ff85";
+            } else {
+                statusEl.innerText = "⚠️ REVISA TU PLAN (LIGAS DISPONIBLES)";
+            }
+        } catch (e) {
+            statusEl.innerText = "❌ ERROR DE CONEXIÓN";
+        }
+    }
+
+    function updateTeams() {
+        const league = document.getElementById('league').value;
+        const html = teamData[league].map(t => `<option value="${t.p}">${t.n}</option>`).join('');
+        document.getElementById('local').innerHTML = html;
+        document.getElementById('visitante').innerHTML = html;
+        document.getElementById('visitante').selectedIndex = 1;
+    }
+
+    function calculate() {
+        const lName = document.getElementById('local').options[document.getElementById('local').selectedIndex].text;
+        const vName = document.getElementById('visitante').options[document.getElementById('visitante').selectedIndex].text;
+        const pL = parseFloat(document.getElementById('local').value) + 5;
+        const pV = parseFloat(document.getElementById('visitante').value);
+        
+        const total = pL + pV + 30;
+        const probL = ((pL/total)*100).toFixed(1);
+        const probV = ((pV/total)*100).toFixed(1);
+
+        document.getElementById('resultado').style.display = 'block';
+        document.getElementById('resTitle').innerText = `${lName} ${probL}% - ${vName} ${probV}%`;
+        document.getElementById('bL').style.width = probL + '%';
+        document.getElementById('bV').style.width = probV + '%';
+        
+        savePrediction(lName, vName, probL, probV);
+    }
+
+    function savePrediction(l, v, pl, pv) {
+        const history = JSON.parse(localStorage.getItem('my_preds') || '[]');
+        history.unshift({ l, v, pl, pv, time: new Date().toLocaleTimeString() });
+        localStorage.setItem('my_preds', JSON.stringify(history.slice(0, 5)));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const history = JSON.parse(localStorage.getItem('my_preds') || '[]');
+        document.getElementById('historyList').innerHTML = history.map(h => `
+            <div class="history-item">
+                <span><strong>${h.l} vs ${h.v}</strong></span>
+                <span style="color:var(--primary)">${h.pl}% - ${h.pv}%</span>
+            </div>
+        `).join('');
+    }
+
+    // Datos iniciales falsos hasta que des a sincronizar
+    teamData.laliga = [{n:"Real Madrid", p:95}, {n:"Barcelona", p:92}];
+    teamData.premier = [{n:"Man City", p:98}, {n:"Liverpool", p:95}];
+
+    updateTeams();
+    renderHistory();
+</script>
+
+</body>
+</html>
